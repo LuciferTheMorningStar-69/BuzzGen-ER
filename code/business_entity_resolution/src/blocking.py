@@ -4,20 +4,12 @@ High-Precision, Scalable Candidate Generation (Blocking) Module
 """
 
 import time
-from collections import defaultdict, Counter
+from collections import defaultdict
 from rapidfuzz import fuzz
 from normalization import (
     clean_text, get_core_name, get_compact_name, extract_name_tokens,
     normalize_address, extract_address_digits, extract_address_keys
 )
-
-def char_ngrams(s: str, n: int = 4) -> set[str]:
-    """Character n-grams of a compact (space-free) string, for fuzzy blocking
-    when tokens don't line up exactly (typos, transliteration drift)."""
-    if len(s) < n:
-        return {s} if s else set()
-    return {s[i:i + n] for i in range(len(s) - n + 1)}
-
 
 class CandidateGenerator:
     """Multi-tier inverted index for ultra-lean candidate generation."""
@@ -29,7 +21,6 @@ class CandidateGenerator:
         self.comp_prefix_idx = defaultdict(list)
         self.addr_idx = defaultdict(list)
         self.digit_idx = defaultdict(list)
-        self.gram_idx = defaultdict(list)
         self.cand_records = []
 
     def fit_candidates(self, candidates: list[tuple[str, str, str, str]]):
@@ -56,9 +47,6 @@ class CandidateGenerator:
             for d in dig:
                 if len(d) >= 3:
                     self.digit_idx[d].append(idx)
-            if len(comp) >= 4:
-                for g in char_ngrams(comp, 4):
-                    self.gram_idx[g].append(idx)
 
     def generate_candidates_for_s1(self, s1_prep: tuple) -> list[tuple[float, int]]:
         """
@@ -68,34 +56,27 @@ class CandidateGenerator:
         """
         sid, name, addr, ctry, cn, comp, dig, norm_a = s1_prep
 
-        # Accumulate a signal COUNT per candidate instead of a set: cheap
-        # (int increments), lets retrieval caps stay generous without
-        # blowing up the expensive fuzzy-scoring step below, and doubles as
-        # a "matched by multiple signals" relevance heuristic for triage.
-        cand_counter = Counter()
-
+        cand_indices = set()
         tokens = extract_name_tokens(cn)
         tok_postings = [(len(self.tok_idx.get(t, [])), t) for t in tokens if t in self.tok_idx]
         tok_postings.sort()
+
         for i, (count, t) in enumerate(tok_postings):
-            if i < 4 or count <= 5000:
-                for c_idx in self.tok_idx[t]:
-                    cand_counter[c_idx] += 1
+            if i < 2 or count <= 300:
+                if count <= 800:
+                    cand_indices.update(self.tok_idx[t])
 
         if len(comp) >= 4:
-            for c_idx in self.comp_idx.get(comp, []):
-                cand_counter[c_idx] += 2  # exact compact-name match is strong evidence
+            cand_indices.update(self.comp_idx.get(comp, []))
             if len(comp) >= 6:
                 p = self.comp_prefix_idx.get(comp[:5], [])
-                if len(p) <= 1000:
-                    for c_idx in p:
-                        cand_counter[c_idx] += 1
+                if len(p) <= 100:
+                    cand_indices.update(p)
 
         for ak in extract_address_keys(norm_a):
             p = self.addr_idx.get(ak, [])
-            if len(p) <= 1000:
-                for c_idx in p:
-                    cand_counter[c_idx] += 1
+            if len(p) <= 250:
+                cand_indices.update(p)
 
         # Standalone digit-only key: catches same-location matches when name
         # tokens don't overlap at all (e.g. native-script vs transliterated
@@ -103,32 +84,8 @@ class CandidateGenerator:
         for d in dig:
             if len(d) >= 3:
                 p = self.digit_idx.get(d, [])
-                if len(p) <= 1000:
-                    for c_idx in p:
-                        cand_counter[c_idx] += 1
-
-        # Character 4-gram fallback: catches typo-heavy or transliteration-
-        # drifted names that share no exact token/compact-string, by taking
-        # the rarest few grams (cheapest signal, avoids blowup from common
-        # substrings) and capping each posting list.
-        if len(comp) >= 4:
-            grams = char_ngrams(comp, 4)
-            gram_postings = sorted(((len(self.gram_idx.get(g, [])), g) for g in grams if g in self.gram_idx))
-            for count, g in gram_postings[:5]:
-                if count <= 1000:
-                    for c_idx in self.gram_idx[g]:
-                        cand_counter[c_idx] += 1
-
-        # Hard ceiling on the EXPENSIVE fuzzy-scoring step: no matter how
-        # many raw postings matched, only the top MAX_SCORE_POOL by signal
-        # count get the costly fuzz.token_set_ratio treatment. This is what
-        # actually bounds runtime -- the generous caps above only affect a
-        # cheap Counter increment, never the O(candidates) fuzzy scoring.
-        MAX_SCORE_POOL = 150
-        if len(cand_counter) > MAX_SCORE_POOL:
-            cand_indices = [c for c, _ in cand_counter.most_common(MAX_SCORE_POOL)]
-        else:
-            cand_indices = list(cand_counter.keys())
+                if len(p) <= 300:
+                    cand_indices.update(p)
 
         t1 = cn.split()
         scored = []
