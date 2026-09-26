@@ -21,7 +21,7 @@ from offline_eval import (
     prep_record, load_holdout_s1, load_ground_truth, build_country_generator, macro_f05
 )
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "output", "champion_lgb_model.txt")
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "output", "champion_lgb_model_v2.txt")
 
 # --- v5's modified core-name stoplist (removes business-identity-bearing terms) ---
 V5_BAD_TERMS = {'ecole', 'services', 'service', 'centre', 'center', 'club', 'trust',

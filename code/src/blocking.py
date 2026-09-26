@@ -61,21 +61,24 @@ class CandidateGenerator:
         tok_postings = [(len(self.tok_idx.get(t, [])), t) for t in tokens if t in self.tok_idx]
         tok_postings.sort()
 
+        # Retrieval-side caps raised well above the old 300/800: a shared
+        # token like "red" being common should still count as evidence --
+        # the final candidate list is bounded later by max_candidates via
+        # fuzzy-score ranking, not by excluding common tokens up front.
         for i, (count, t) in enumerate(tok_postings):
-            if i < 2 or count <= 300:
-                if count <= 800:
-                    cand_indices.update(self.tok_idx[t])
+            if i < 4 or count <= 6000:
+                cand_indices.update(self.tok_idx[t])
 
         if len(comp) >= 4:
             cand_indices.update(self.comp_idx.get(comp, []))
             if len(comp) >= 6:
                 p = self.comp_prefix_idx.get(comp[:5], [])
-                if len(p) <= 100:
+                if len(p) <= 1500:
                     cand_indices.update(p)
 
         for ak in extract_address_keys(norm_a):
             p = self.addr_idx.get(ak, [])
-            if len(p) <= 250:
+            if len(p) <= 1500:
                 cand_indices.update(p)
 
         # Standalone digit-only key: catches same-location matches when name
@@ -84,7 +87,7 @@ class CandidateGenerator:
         for d in dig:
             if len(d) >= 3:
                 p = self.digit_idx.get(d, [])
-                if len(p) <= 300:
+                if len(p) <= 1500:
                     cand_indices.update(p)
 
         t1 = cn.split()
