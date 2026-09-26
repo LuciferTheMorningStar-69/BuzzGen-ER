@@ -1,0 +1,21 @@
+# Environments & Bytecode
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.DS_Store
+__MACOSX/
+
+# Large packages & media (>100MB)
+*.zip
+*.mp4
+*.mp3
+video_frames/
+
+# Raw unpacked student resource directory
+student_resource/
+
+# Large output files exceeding GitHub 100MB limit
+output/candidate_pairs.tsv
+output/matching_results_v1_backup.tsv
+output_dryrun/
