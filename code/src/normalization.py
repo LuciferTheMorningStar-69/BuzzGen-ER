@@ -5,6 +5,7 @@ Ultra-Fast Normalization & Text Processing Module
 
 import re
 import anyascii
+from rapidfuzz.distance import Levenshtein
 
 LEGAL_TERMS = {
     # US / UK / Common
@@ -84,9 +85,26 @@ def clean_text(text: str) -> str:
     return " ".join(tokens)
 
 
+_SINGLE_WORD_LEGAL_TERMS = [t for t in LEGAL_TERMS if " " not in t and len(t) >= 4]
+
+
+def _is_legal_term(word: str) -> bool:
+    """Exact match, or a near-miss (edit distance 1-2) to tolerate transliteration
+    noise like anyascii's 'praivet' for 'private' or 'limitet' for 'limited'."""
+    if word in LEGAL_TERMS:
+        return True
+    if len(word) < 4:
+        return False
+    max_dist = 1 if len(word) <= 6 else 2
+    for term in _SINGLE_WORD_LEGAL_TERMS:
+        if abs(len(word) - len(term)) <= max_dist and Levenshtein.distance(word, term) <= max_dist:
+            return True
+    return False
+
+
 def get_core_name(text: str) -> str:
     cleaned = clean_text(text)
-    tokens = [w for w in cleaned.split() if w not in LEGAL_TERMS]
+    tokens = [w for w in cleaned.split() if not _is_legal_term(w)]
     return " ".join(tokens) if tokens else cleaned
 
 
