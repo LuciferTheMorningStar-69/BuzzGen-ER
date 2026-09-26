@@ -20,6 +20,7 @@ class CandidateGenerator:
         self.comp_idx = defaultdict(list)
         self.comp_prefix_idx = defaultdict(list)
         self.addr_idx = defaultdict(list)
+        self.digit_idx = defaultdict(list)
         self.cand_records = []
 
     def fit_candidates(self, candidates: list[tuple[str, str, str, str]]):
@@ -43,6 +44,9 @@ class CandidateGenerator:
                     self.comp_prefix_idx[comp[:5]].append(idx)
             for ak in extract_address_keys(norm_a):
                 self.addr_idx[ak].append(idx)
+            for d in dig:
+                if len(d) >= 3:
+                    self.digit_idx[d].append(idx)
 
     def generate_candidates_for_s1(self, s1_prep: tuple) -> list[tuple[float, int]]:
         """
@@ -73,6 +77,15 @@ class CandidateGenerator:
             p = self.addr_idx.get(ak, [])
             if len(p) <= 250:
                 cand_indices.update(p)
+
+        # Standalone digit-only key: catches same-location matches when name
+        # tokens don't overlap at all (e.g. native-script vs transliterated
+        # business names), which word-paired address keys miss entirely.
+        for d in dig:
+            if len(d) >= 3:
+                p = self.digit_idx.get(d, [])
+                if len(p) <= 300:
+                    cand_indices.update(p)
 
         t1 = cn.split()
         scored = []
