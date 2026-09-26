@@ -19,3 +19,10 @@ student_resource/
 output/candidate_pairs.tsv
 output/matching_results_v1_backup.tsv
 output_dryrun/
+
+# Raw unpacked dataset (tracked as .gz/.part_* instead; run unpack_dataset.sh)
+dataset/train/*.tsv
+dataset/test/*.tsv
+
+# Local offline-eval cache (large pickled indices, machine-specific)
+.eval_cache/
