@@ -61,10 +61,15 @@ class CandidateGenerator:
         tok_postings = [(len(self.tok_idx.get(t, [])), t) for t in tokens if t in self.tok_idx]
         tok_postings.sort()
 
+        rescue_tokens = []
         for i, (count, t) in enumerate(tok_postings):
             if i < 2 or count <= 300:
                 if count <= 800:
                     cand_indices.update(self.tok_idx[t])
+            elif count <= 8000:
+                # Too common to trust blindly (e.g. "red"), but worth a
+                # corroborated rescue pass below rather than dropping outright.
+                rescue_tokens.append(t)
 
         if len(comp) >= 4:
             cand_indices.update(self.comp_idx.get(comp, []))
@@ -86,6 +91,33 @@ class CandidateGenerator:
                 p = self.digit_idx.get(d, [])
                 if len(p) <= 300:
                     cand_indices.update(p)
+
+        # Rescue pass for common tokens (e.g. "red") that were correctly
+        # matched but excluded above to avoid blindly trusting a huge
+        # postings list. Cheaply pre-score candidates by ACTUAL shared-token/
+        # digit overlap (not just "matched via some index") and only rescue
+        # the most corroborated few -- this is what a prior naive
+        # signal-count-only triage got wrong: it let several weak common
+        # signals outrank one strong rare one. Here nothing is admitted
+        # without direct, cheap-to-verify textual evidence.
+        if rescue_tokens:
+            t1_set = set(cn.split())
+            pre_scored = []
+            seen = set()
+            for t in rescue_tokens:
+                for c_idx in self.tok_idx[t]:
+                    if c_idx in cand_indices or c_idx in seen:
+                        continue
+                    seen.add(c_idx)
+                    c_rec = self.cand_records[c_idx]
+                    shared_tok = len(t1_set & set(c_rec[4].split()))
+                    shared_dig = len(dig & c_rec[6])
+                    pre_score = 2 * shared_tok + shared_dig
+                    if pre_score > 0:
+                        pre_scored.append((pre_score, c_idx))
+            pre_scored.sort(reverse=True)
+            for _, c_idx in pre_scored[:50]:
+                cand_indices.add(c_idx)
 
         t1 = cn.split()
         scored = []
