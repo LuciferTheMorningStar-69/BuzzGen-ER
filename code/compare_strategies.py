@@ -199,8 +199,13 @@ def main():
         for (sid, cid, _), p in zip(sid_cid_prob, probs):
             by_sid_prob.setdefault(sid, []).append((cid, p))
 
+        print(f"  Prob percentiles: {np.percentile(probs, [50,90,95,99,99.5,99.9])}")
+        print(f"  Fraction of pairs with prob>=0.99: {np.mean(probs>=0.99)*100:.3f}%  "
+              f">=0.995: {np.mean(probs>=0.995)*100:.3f}%  >=0.999: {np.mean(probs>=0.999)*100:.3f}%\n")
+
+        thresh_grid = list(np.arange(0.50, 0.99, 0.02)) + list(np.arange(0.99, 0.9999, 0.001))
         best = (-1, None)
-        for thresh in np.arange(0.50, 0.995, 0.01):
+        for thresh in thresh_grid:
             pred_map = {}
             for sid in ids:
                 pred_map[sid] = {cid for cid, p in by_sid_prob.get(sid, []) if p >= thresh}
