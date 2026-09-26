@@ -4,7 +4,7 @@ High-Precision, Scalable Candidate Generation (Blocking) Module
 """
 
 import time
-from collections import defaultdict
+from collections import defaultdict, Counter
 from rapidfuzz import fuzz
 from normalization import (
     clean_text, get_core_name, get_compact_name, extract_name_tokens,
@@ -68,30 +68,34 @@ class CandidateGenerator:
         """
         sid, name, addr, ctry, cn, comp, dig, norm_a = s1_prep
 
-        cand_indices = set()
+        # Accumulate a signal COUNT per candidate instead of a set: cheap
+        # (int increments), lets retrieval caps stay generous without
+        # blowing up the expensive fuzzy-scoring step below, and doubles as
+        # a "matched by multiple signals" relevance heuristic for triage.
+        cand_counter = Counter()
+
         tokens = extract_name_tokens(cn)
         tok_postings = [(len(self.tok_idx.get(t, [])), t) for t in tokens if t in self.tok_idx]
         tok_postings.sort()
-
-        # Retrieval-side caps raised well above the old 300/800: a shared
-        # token like "red" being common should still count as evidence --
-        # the final candidate list is bounded later by max_candidates via
-        # fuzzy-score ranking, not by excluding common tokens up front.
         for i, (count, t) in enumerate(tok_postings):
-            if i < 4 or count <= 6000:
-                cand_indices.update(self.tok_idx[t])
+            if i < 4 or count <= 5000:
+                for c_idx in self.tok_idx[t]:
+                    cand_counter[c_idx] += 1
 
         if len(comp) >= 4:
-            cand_indices.update(self.comp_idx.get(comp, []))
+            for c_idx in self.comp_idx.get(comp, []):
+                cand_counter[c_idx] += 2  # exact compact-name match is strong evidence
             if len(comp) >= 6:
                 p = self.comp_prefix_idx.get(comp[:5], [])
-                if len(p) <= 1500:
-                    cand_indices.update(p)
+                if len(p) <= 1000:
+                    for c_idx in p:
+                        cand_counter[c_idx] += 1
 
         for ak in extract_address_keys(norm_a):
             p = self.addr_idx.get(ak, [])
-            if len(p) <= 1500:
-                cand_indices.update(p)
+            if len(p) <= 1000:
+                for c_idx in p:
+                    cand_counter[c_idx] += 1
 
         # Standalone digit-only key: catches same-location matches when name
         # tokens don't overlap at all (e.g. native-script vs transliterated
@@ -99,8 +103,9 @@ class CandidateGenerator:
         for d in dig:
             if len(d) >= 3:
                 p = self.digit_idx.get(d, [])
-                if len(p) <= 1500:
-                    cand_indices.update(p)
+                if len(p) <= 1000:
+                    for c_idx in p:
+                        cand_counter[c_idx] += 1
 
         # Character 4-gram fallback: catches typo-heavy or transliteration-
         # drifted names that share no exact token/compact-string, by taking
@@ -110,8 +115,20 @@ class CandidateGenerator:
             grams = char_ngrams(comp, 4)
             gram_postings = sorted(((len(self.gram_idx.get(g, [])), g) for g in grams if g in self.gram_idx))
             for count, g in gram_postings[:5]:
-                if count <= 1500:
-                    cand_indices.update(self.gram_idx[g])
+                if count <= 1000:
+                    for c_idx in self.gram_idx[g]:
+                        cand_counter[c_idx] += 1
+
+        # Hard ceiling on the EXPENSIVE fuzzy-scoring step: no matter how
+        # many raw postings matched, only the top MAX_SCORE_POOL by signal
+        # count get the costly fuzz.token_set_ratio treatment. This is what
+        # actually bounds runtime -- the generous caps above only affect a
+        # cheap Counter increment, never the O(candidates) fuzzy scoring.
+        MAX_SCORE_POOL = 150
+        if len(cand_counter) > MAX_SCORE_POOL:
+            cand_indices = [c for c, _ in cand_counter.most_common(MAX_SCORE_POOL)]
+        else:
+            cand_indices = list(cand_counter.keys())
 
         t1 = cn.split()
         scored = []
