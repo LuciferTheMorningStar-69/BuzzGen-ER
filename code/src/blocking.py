@@ -11,6 +11,14 @@ from normalization import (
     normalize_address, extract_address_digits, extract_address_keys
 )
 
+def char_ngrams(s: str, n: int = 4) -> set[str]:
+    """Character n-grams of a compact (space-free) string, for fuzzy blocking
+    when tokens don't line up exactly (typos, transliteration drift)."""
+    if len(s) < n:
+        return {s} if s else set()
+    return {s[i:i + n] for i in range(len(s) - n + 1)}
+
+
 class CandidateGenerator:
     """Multi-tier inverted index for ultra-lean candidate generation."""
 
@@ -21,6 +29,7 @@ class CandidateGenerator:
         self.comp_prefix_idx = defaultdict(list)
         self.addr_idx = defaultdict(list)
         self.digit_idx = defaultdict(list)
+        self.gram_idx = defaultdict(list)
         self.cand_records = []
 
     def fit_candidates(self, candidates: list[tuple[str, str, str, str]]):
@@ -47,6 +56,9 @@ class CandidateGenerator:
             for d in dig:
                 if len(d) >= 3:
                     self.digit_idx[d].append(idx)
+            if len(comp) >= 4:
+                for g in char_ngrams(comp, 4):
+                    self.gram_idx[g].append(idx)
 
     def generate_candidates_for_s1(self, s1_prep: tuple) -> list[tuple[float, int]]:
         """
@@ -89,6 +101,17 @@ class CandidateGenerator:
                 p = self.digit_idx.get(d, [])
                 if len(p) <= 1500:
                     cand_indices.update(p)
+
+        # Character 4-gram fallback: catches typo-heavy or transliteration-
+        # drifted names that share no exact token/compact-string, by taking
+        # the rarest few grams (cheapest signal, avoids blowup from common
+        # substrings) and capping each posting list.
+        if len(comp) >= 4:
+            grams = char_ngrams(comp, 4)
+            gram_postings = sorted(((len(self.gram_idx.get(g, [])), g) for g in grams if g in self.gram_idx))
+            for count, g in gram_postings[:5]:
+                if count <= 1500:
+                    cand_indices.update(self.gram_idx[g])
 
         t1 = cn.split()
         scored = []
