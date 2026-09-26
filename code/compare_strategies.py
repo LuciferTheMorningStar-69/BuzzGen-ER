@@ -114,6 +114,9 @@ def v5_keep(cn1, comp1, norm_a1, dig1, ft1, cn2, comp2, norm_a2, dig2, ft2):
     return True
 
 
+CACHE_PATH = os.path.join(os.path.dirname(__file__), "..", ".eval_cache", "holdout_cands_feats.pkl")
+
+
 def main():
     t_start = time.time()
     s1_sample = load_holdout_s1()
@@ -124,43 +127,58 @@ def main():
     print(f"Holdout: {len(ids):,} entities, {n_with_matches:,} have >=1 true match, "
           f"{len(ids)-n_with_matches:,} true singletons\n")
 
-    print("\nGenerating candidates + features for holdout sample (one country index at a time)...")
-    t0 = time.time()
     s1_prep = [prep_record(r) for r in s1_sample]
-    s1_by_country = defaultdict(list)
-    for s_rec in s1_prep:
-        s1_by_country[s_rec[3]].append(s_rec)
 
-    all_cands = {}          # sid -> list of (cid, cand_prep)
-    all_feats = {}          # sid -> list of (cid, feats)
-    recall_hits = 0
-    recall_total = 0
-    total_cands = 0
+    if os.path.exists(CACHE_PATH):
+        print(f"Loading cached candidates+features from {CACHE_PATH}...")
+        import pickle
+        with open(CACHE_PATH, "rb") as f:
+            all_cands, all_feats, recall_hits, recall_total, total_cands = pickle.load(f)
+        print(f"  Loaded. Avg candidates/entity: {total_cands/len(ids):.2f}")
+    else:
+        print("\nGenerating candidates + features for holdout sample (one country index at a time)...")
+        t0 = time.time()
+        s1_by_country = defaultdict(list)
+        for s_rec in s1_prep:
+            s1_by_country[s_rec[3]].append(s_rec)
 
-    for country, recs in s1_by_country.items():
-        gen = build_country_generator(country, max_candidates=15)
-        for s_rec in recs:
-            sid = s_rec[0]
-            cands = gen.generate_candidates_for_s1(s_rec)
-            clist = []
-            flist = []
-            for sc, c_idx in cands:
-                c_rec = gen.cand_records[c_idx]
-                clist.append((c_rec[0], c_rec))
-                flist.append((c_rec[0], compute_pair_features(s_rec, c_rec)))
-            all_cands[sid] = clist
-            all_feats[sid] = flist
-            total_cands += len(clist)
+        all_cands = {}          # sid -> list of (cid, cand_prep)
+        all_feats = {}          # sid -> list of (cid, feats)
+        recall_hits = 0
+        recall_total = 0
+        total_cands = 0
 
-            true = gt_map.get(sid, set())
-            if true:
-                found = {c[0] for c in clist} & true
-                recall_hits += len(found)
-                recall_total += len(true)
-        del gen
-        gc.collect()
+        for country, recs in s1_by_country.items():
+            gen = build_country_generator(country, max_candidates=15)
+            for s_rec in recs:
+                sid = s_rec[0]
+                cands = gen.generate_candidates_for_s1(s_rec)
+                clist = []
+                flist = []
+                for sc, c_idx in cands:
+                    c_rec = gen.cand_records[c_idx]
+                    clist.append((c_rec[0], c_rec))
+                    flist.append((c_rec[0], compute_pair_features(s_rec, c_rec)))
+                all_cands[sid] = clist
+                all_feats[sid] = flist
+                total_cands += len(clist)
 
-    print(f"  Done in {time.time()-t0:.1f}s. Avg candidates/entity: {total_cands/len(ids):.2f}")
+                true = gt_map.get(sid, set())
+                if true:
+                    found = {c[0] for c in clist} & true
+                    recall_hits += len(found)
+                    recall_total += len(true)
+            del gen
+            gc.collect()
+
+        print(f"  Done in {time.time()-t0:.1f}s. Avg candidates/entity: {total_cands/len(ids):.2f}")
+
+        import pickle
+        os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
+        with open(CACHE_PATH, "wb") as f:
+            pickle.dump((all_cands, all_feats, recall_hits, recall_total, total_cands), f, protocol=pickle.HIGHEST_PROTOCOL)
+        print(f"  Cached to {CACHE_PATH}")
+
     print(f"  BLOCKING RECALL CEILING: {recall_hits}/{recall_total} = {recall_hits/max(1,recall_total)*100:.2f}% "
           f"of true matches are reachable via candidates\n")
 
@@ -182,7 +200,7 @@ def main():
             by_sid_prob.setdefault(sid, []).append((cid, p))
 
         best = (-1, None)
-        for thresh in np.arange(0.50, 0.96, 0.02):
+        for thresh in np.arange(0.50, 0.995, 0.01):
             pred_map = {}
             for sid in ids:
                 pred_map[sid] = {cid for cid, p in by_sid_prob.get(sid, []) if p >= thresh}
