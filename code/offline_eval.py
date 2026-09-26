@@ -71,17 +71,10 @@ def load_ground_truth(needed_ids):
     return gt
 
 
-def build_or_load_generator(max_candidates=15):
-    cache_path = os.path.join(CACHE_DIR, f"generator_mc{max_candidates}.pkl")
-    if os.path.exists(cache_path):
-        print(f"Loading cached candidate generator from {cache_path}...")
-        t0 = time.time()
-        with open(cache_path, "rb") as f:
-            gen = pickle.load(f)
-        print(f"  Loaded in {time.time()-t0:.1f}s ({len(gen.cand_records):,} candidate records)")
-        return gen
-
-    print("Building full candidate generator over train_source2 + train_source3 (one-time, cached after)...")
+def build_country_generator(country, max_candidates=15):
+    """Build a candidate index scoped to ONE country's pool (mirrors how the
+    real inference pipeline partitions by country) to keep peak memory bounded."""
+    print(f"Building candidate generator for country={country} (train_source2+3, filtered)...")
     t0 = time.time()
     cand_raw = []
     for src in ["2", "3"]:
@@ -90,19 +83,14 @@ def build_or_load_generator(max_candidates=15):
             f.readline()
             for line in f:
                 p = line.rstrip("\n").split(DELIM)
-                if p and p[0]:
-                    cand_raw.append((p[0], p[1] if len(p) > 1 else "", p[2] if len(p) > 2 else "", p[3] if len(p) > 3 else ""))
+                if p and p[0] and len(p) > 3 and p[3] == country:
+                    cand_raw.append((p[0], p[1] if len(p) > 1 else "", p[2] if len(p) > 2 else "", p[3]))
     print(f"  Loaded {len(cand_raw):,} candidate records in {time.time()-t0:.1f}s")
 
     t0 = time.time()
     gen = CandidateGenerator(max_candidates=max_candidates)
     gen.fit_candidates(cand_raw)
     print(f"  Fitted index in {time.time()-t0:.1f}s")
-
-    t0 = time.time()
-    with open(cache_path, "wb") as f:
-        pickle.dump(gen, f, protocol=pickle.HIGHEST_PROTOCOL)
-    print(f"  Cached to {cache_path} in {time.time()-t0:.1f}s")
     return gen
 
 

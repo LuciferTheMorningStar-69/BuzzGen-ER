@@ -15,8 +15,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from normalization import get_core_name, get_compact_name, normalize_address, extract_address_digits, LEGAL_TERMS
 from features import compute_pair_features
 
+import gc
+from collections import defaultdict
 from offline_eval import (
-    prep_record, load_holdout_s1, load_ground_truth, build_or_load_generator, macro_f05
+    prep_record, load_holdout_s1, load_ground_truth, build_country_generator, macro_f05
 )
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "output", "champion_lgb_model.txt")
@@ -122,11 +124,12 @@ def main():
     print(f"Holdout: {len(ids):,} entities, {n_with_matches:,} have >=1 true match, "
           f"{len(ids)-n_with_matches:,} true singletons\n")
 
-    gen = build_or_load_generator(max_candidates=15)
-
-    print("\nGenerating candidates + features for holdout sample...")
+    print("\nGenerating candidates + features for holdout sample (one country index at a time)...")
     t0 = time.time()
     s1_prep = [prep_record(r) for r in s1_sample]
+    s1_by_country = defaultdict(list)
+    for s_rec in s1_prep:
+        s1_by_country[s_rec[3]].append(s_rec)
 
     all_cands = {}          # sid -> list of (cid, cand_prep)
     all_feats = {}          # sid -> list of (cid, feats)
@@ -134,24 +137,28 @@ def main():
     recall_total = 0
     total_cands = 0
 
-    for s_rec in s1_prep:
-        sid = s_rec[0]
-        cands = gen.generate_candidates_for_s1(s_rec)
-        clist = []
-        flist = []
-        for sc, c_idx in cands:
-            c_rec = gen.cand_records[c_idx]
-            clist.append((c_rec[0], c_rec))
-            flist.append((c_rec[0], compute_pair_features(s_rec, c_rec)))
-        all_cands[sid] = clist
-        all_feats[sid] = flist
-        total_cands += len(clist)
+    for country, recs in s1_by_country.items():
+        gen = build_country_generator(country, max_candidates=15)
+        for s_rec in recs:
+            sid = s_rec[0]
+            cands = gen.generate_candidates_for_s1(s_rec)
+            clist = []
+            flist = []
+            for sc, c_idx in cands:
+                c_rec = gen.cand_records[c_idx]
+                clist.append((c_rec[0], c_rec))
+                flist.append((c_rec[0], compute_pair_features(s_rec, c_rec)))
+            all_cands[sid] = clist
+            all_feats[sid] = flist
+            total_cands += len(clist)
 
-        true = gt_map.get(sid, set())
-        if true:
-            found = {c[0] for c in clist} & true
-            recall_hits += len(found)
-            recall_total += len(true)
+            true = gt_map.get(sid, set())
+            if true:
+                found = {c[0] for c in clist} & true
+                recall_hits += len(found)
+                recall_total += len(true)
+        del gen
+        gc.collect()
 
     print(f"  Done in {time.time()-t0:.1f}s. Avg candidates/entity: {total_cands/len(ids):.2f}")
     print(f"  BLOCKING RECALL CEILING: {recall_hits}/{recall_total} = {recall_hits/max(1,recall_total)*100:.2f}% "
