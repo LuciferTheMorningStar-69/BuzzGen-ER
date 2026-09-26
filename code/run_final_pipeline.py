@@ -22,7 +22,9 @@ import lightgbm as lgb
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from blocking import CandidateGenerator
-from features import compute_pair_features
+from features import compute_pair_features, FEATURE_NAMES
+
+NAME_IDX = {n: i for i, n in enumerate(FEATURE_NAMES)}
 from offline_eval import prep_record
 
 DELIM = "\t"
@@ -68,11 +70,32 @@ def main():
     ap.add_argument("--model-path", default=os.path.join(os.path.dirname(__file__), "..", "output", "champion_lgb_model.txt"))
     ap.add_argument("--threshold", type=float, default=0.98)
     ap.add_argument("--max-candidates", type=int, default=15)
+    ap.add_argument("--name-floor", type=float, default=0.0,
+                     help="Reject a match if max(ns_core_set, ns_core_sort, ns_comp_ratio) is below this, "
+                          "regardless of model probability. Guards against address-only false merges. "
+                          "Measured cost-free on US/India holdout at floor<=40.")
+    ap.add_argument("--countries", nargs="*", default=None,
+                     help="Only (re)generate for these countries; other rows in existing output files are preserved.")
     args = ap.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
     cand_path = os.path.join(args.output_dir, "candidate_pairs.tsv")
     match_path = os.path.join(args.output_dir, "matching_results.tsv")
+
+    existing_cand = {}
+    existing_match = {}
+    if args.countries and os.path.exists(match_path) and os.path.exists(cand_path):
+        print("Loading existing outputs to preserve rows for countries not being regenerated...")
+        with open(cand_path, encoding="utf-8") as f:
+            f.readline()
+            for line in f:
+                p = line.rstrip("\n").split(DELIM)
+                existing_cand[p[0]] = p[1] if len(p) > 1 else ""
+        with open(match_path, encoding="utf-8") as f:
+            f.readline()
+            for line in f:
+                p = line.rstrip("\n").split(DELIM)
+                existing_match[p[0]] = p[1] if len(p) > 1 else ""
 
     t_start = time.time()
     print("Loading test_source1.tsv...")
@@ -80,6 +103,10 @@ def main():
     print(f"  {len(s1_order):,} total S1 entities")
     for c, lst in s1_by_country.items():
         print(f"    {c}: {len(lst):,}")
+
+    if args.countries:
+        s1_by_country = {c: v for c, v in s1_by_country.items() if c in args.countries}
+        print(f"  Regenerating only: {list(s1_by_country.keys())}")
 
     print(f"\nLoading matcher model from {args.model_path} (threshold={args.threshold})...")
     booster = lgb.Booster(model_file=args.model_path)
@@ -117,9 +144,14 @@ def main():
             if batch_X:
                 probs = booster.predict(np.array(batch_X, dtype=np.float32), num_threads=8)
                 accepted = defaultdict(list)
-                for (sid, cid), p in zip(batch_pairs, probs):
-                    if p >= args.threshold:
-                        accepted[sid].append((p, cid))
+                for (sid, cid), p, feats in zip(batch_pairs, probs, batch_X):
+                    if p < args.threshold:
+                        continue
+                    if args.name_floor > 0:
+                        name_sim = max(feats[NAME_IDX['ns_core_set']], feats[NAME_IDX['ns_core_sort']], feats[NAME_IDX['ns_comp_ratio']])
+                        if name_sim < args.name_floor:
+                            continue
+                    accepted[sid].append((p, cid))
             else:
                 accepted = defaultdict(list)
 
@@ -147,8 +179,9 @@ def main():
         n_singleton = 0
         n_matches = 0
         for sid in s1_order:
-            fc.write(f"{sid}\t{cand_results.get(sid,'')}\n")
-            m = match_results.get(sid, "")
+            c = cand_results.get(sid, existing_cand.get(sid, ""))
+            fc.write(f"{sid}\t{c}\n")
+            m = match_results.get(sid, existing_match.get(sid, ""))
             fm.write(f"{sid}\t{m}\n")
             if not m:
                 n_singleton += 1
