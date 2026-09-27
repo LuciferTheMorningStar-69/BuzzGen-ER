@@ -11,16 +11,23 @@ if [ ! -f "output/matching_results.tsv" ] || [ ! -f "output/candidate_pairs.tsv"
     exit 1
 fi
 
-# Create clean zip structure
+# Create clean zip structure -- only the code that actually produced the
+# delivered output/ files. Deliberately excludes code/run_pipeline.sh
+# (points at a stale, pre-fix src/pipeline.py with outdated hyperparameters
+# and a discarded-threshold bug) and code/champion_resolver.py (an
+# abandoned rule-based approach, never used for the delivered results,
+# whose docstring falsely claims "Macro F_0.5 > 0.97 - 0.99").
 zip -q -r "$ZIP_NAME" \
     output/matching_results.tsv \
     output/candidate_pairs.tsv \
     code/src \
+    code/train_full_model.py \
+    code/run_final_pipeline.py \
+    code/offline_eval.py \
+    code/compare_strategies.py \
+    code/validate_submission.py \
     code/requirements.txt \
     code/README.md \
-    code/run_pipeline.sh \
-    code/business_entity_resolution \
-    code/champion_resolver.py \
     Documentation_template.md
 
 cp "$ZIP_NAME" Team_BuzzGen_submission.zip
