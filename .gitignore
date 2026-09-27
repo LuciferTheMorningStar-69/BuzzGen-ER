@@ -18,6 +18,7 @@ student_resource/
 # Large output files exceeding GitHub 100MB limit
 output/candidate_pairs.tsv
 output/matching_results_v1_backup.tsv
+output/*_backup.tsv
 output_dryrun/
 
 # Raw unpacked dataset (tracked as .gz/.part_* instead; run unpack_dataset.sh)
