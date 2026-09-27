@@ -30,7 +30,7 @@ During our initial data exploration across the ~12 million records in the train 
    - Under the macro $F_{0.5}$ metric, predicting an empty list for a singleton scores **1.0**, whereas even a single false match drops the score to **0.0**. Therefore, high confidence gating on singletons is paramount.
 
 ### 2.2 Solution Strategy
-- **Approach Type**: Multi-Tier Lean Inverted Index Blocking + 21-Dimensional Pairwise Feature Engineering + LightGBM Gradient Boosted Decision Tree + Macro $F_{0.5}$ Singleton Calibrated Thresholding.
+- **Approach Type**: Multi-Tier Lean Inverted Index Blocking + 22-Dimensional Pairwise Feature Engineering + LightGBM Gradient Boosted Decision Tree + Macro $F_{0.5}$ Singleton Calibrated Thresholding.
 - **Core Innovations**:
   1. *Phonetic Open-Set Canonicalization*: Unifies multilingual scripts into standardized core stems while preserving discriminative brand identifiers.
   2. *Ultra-Lean Multi-Tier Blocking*: Uses rare token inverted indices, compact string prefixes, address spatial keys, and a corroborated common-token rescue pass to maximize candidate recall ceiling (measured ~91%) while minimizing candidate set size (averaging ~14-15 per entity) to excel on the blocking evaluation criterion.
@@ -59,8 +59,8 @@ Candidate generation is evaluated directly as part of final rankings, favoring p
 
 ## 4. Matching Model
 
-### 4.1 Feature Engineering (21 Features)
-For each $(S_1, S_{\text{cand}})$ candidate pair, we extract 21 high-signal features:
+### 4.1 Feature Engineering (22 Features)
+For each $(S_1, S_{\text{cand}})$ candidate pair, we extract 22 high-signal features:
 - **Lexical Name Features**:
   - `ns_raw`: Token set ratio of raw names.
   - `ns_core_set`: Token set ratio of stripped core names.
@@ -68,6 +68,7 @@ For each $(S_1, S_{\text{cand}})$ candidate pair, we extract 21 high-signal feat
   - `ns_core_ratio`: Levenshtein ratio of stripped core names.
   - `ns_comp_ratio`: Character ratio of compact names (concatenated).
   - `first_tok_match`: Binary indicator of exact brand/first-token match.
+  - `first_tok_generic`: Binary flag that discounts `first_tok_match` when the shared first token is just the address's city name repeated in the business name (e.g. a business named after its own city) rather than a distinguishing brand word -- catches false merges between unrelated businesses sharing a city-name prefix. Validated in isolation: F0.5 0.90401 -> 0.90531 on the held-out set, improving precision and recall together.
   - `exact_name`: Binary indicator of exact normalized core name match.
   - `len_diff`: Absolute difference in core name length.
   - `len_ratio`: Ratio of shorter to longer core name length.
@@ -98,48 +99,47 @@ For each $(S_1, S_{\text{cand}})$ candidate pair, we extract 21 high-signal feat
 - **Threshold Selection**:
   - Grid search over $\tau \in [0.50, 0.995)$ with step 0.01 on the internal validation split.
   - Calibrated directly on the macro $F_{0.5}$ metric.
-  - Selected threshold $\tau^* = 0.60$.
+  - Selected threshold $\tau^* = 0.58$.
 
 ---
 
 ## 5. Results & Error Analysis
 
-- **Macro $F_{0.5}$ Validation Score**: **0.90742** on a 20,000-entity held-out split (US + India, disjoint from all training data), at precision 97.42% / recall 82.04% at the selected threshold.
+- **Macro $F_{0.5}$ Validation Score**: **0.90531** on a 20,000-entity held-out split (US + India, disjoint from all training data), at the selected threshold. Independently re-confirmed at 0.90507 on a second machine/environment (cross-validated against a separate run of this same pipeline).
 - **Candidate Recall Ceiling**: **~91%** of true match instances reachable within top-15 candidates (measured, not estimated).
-- **Note on France**: the training data contains no France records at all, so the France portion of the test set cannot be validated offline; actual leaderboard performance (which blends all three countries) has run several points below the offline US/India number, reflecting this gap.
+- **Note on France**: the training data contains no France records at all, so the France portion of the test set cannot be validated offline; actual leaderboard performance (which blends all three countries) has historically run several points below the offline US/India number, reflecting this gap. The `first_tok_generic` feature specifically targets a diagnosed France false-merge pattern, so its real-world benefit there is plausibly larger than the offline US/India number shows, but this cannot be confirmed without a submission.
 - **Common False Positives (Wrong Merges)**:
   - Businesses sharing generic brand stems (e.g., "Star Developers") located on nearby streets where address digits differ by small offsets (e.g., 37 vs 41). Penalized via the `dig_mismatch` feature.
-  - Entities whose first name token is also a place name repeated in the address (e.g., a business named after its city), which weakens the `first_tok_match` signal in ways not yet fully corrected.
+  - Entities whose first name token is also a place name repeated in the address (e.g., a business named after its city), which weakens the `first_tok_match` signal -- now corrected via the `first_tok_generic` feature (Section 4.1).
 - **Common False Negatives (Missed Matches)**:
   - The dominant cause of the ~9% recall gap: pairs sharing essentially no common name tokens, digits, or address structure after normalization (e.g. heavy transliteration drift), which no text-similarity-based blocking method tested (token/address/digit indices, n-gram, phonetic/metaphone) was able to retrieve.
 
 ---
 
 ## 6. Conclusion
-Our pipeline demonstrates that entity resolution at massive scale (11.7 million records) does not require slow, resource-heavy neural models. By combining linguistically informed open-set preprocessing, ultra-lean inverted index blocking, and a precision-calibrated LightGBM model, we achieve a validated macro $F_{0.5}$ of **0.90742** on held-out US/India data (recall ceiling ~91%, the binding constraint on further gains), a lean average candidate footprint (~14-15 per entity), and reproducibility from raw data in under 30 minutes on commodity 4-core hardware.
+Our pipeline demonstrates that entity resolution at massive scale (11.7 million records) does not require slow, resource-heavy neural models. By combining linguistically informed open-set preprocessing, ultra-lean inverted index blocking, and a precision-calibrated LightGBM model, we achieve a validated macro $F_{0.5}$ of **0.90531** on held-out US/India data (recall ceiling ~91%, the binding constraint on further gains), a lean average candidate footprint (~14-15 per entity), and reproducibility from raw data in under 30 minutes on commodity 4-core hardware.
 
 ---
 
 ## Appendix
 
 ### A. Code Artifacts & Reproducibility
-Shared modules (used by both training and inference) are under `code/src/` (mirrored at `code/business_entity_resolution/src/`):
-- `normalization.py`: Normalization routines, Indic transliteration, regex-compiled state/address parsing.
-- `blocking.py`: `CandidateGenerator` inverted index and candidate ranking.
-- `features.py`: 21-dimensional pairwise feature extraction.
-- `requirements.txt`: Pinned dependencies (`lightgbm`, `rapidfuzz`, `anyascii`, `scikit-learn`, `numpy`, `pandas`, `scipy`, `jellyfish`).
+The runnable pipeline is at `code/business_entity_resolution/` (mirrored, shared-module-only, at `code/src/`):
+- `src/normalization.py`: Normalization routines, Indic transliteration, regex-compiled state/address parsing.
+- `src/blocking.py`: `CandidateGenerator` inverted index and candidate ranking.
+- `src/features.py`: 22-dimensional pairwise feature extraction.
+- `requirements.txt`: Pinned dependencies (`lightgbm`, `rapidfuzz`, `anyascii`, `scikit-learn`, `numpy`, `pandas`, `scipy`).
+- `train_full_model.py`: trains the LightGBM model on `train_source1.tsv` and calibrates the decision threshold via macro-$F_{0.5}$ grid search.
+- `run_final_pipeline.py`: runs the trained model against the real test set to produce `matching_results.tsv` and `candidate_pairs.tsv`.
+- `offline_eval.py` / `compare_strategies.py`: the held-out validation harness used to produce every number reported in Section 5.
+- `validate_submission.py`: validates output files against the platform's submission rules.
 
-The actual scripts used to produce the delivered model and submission files:
-- `code/train_full_model.py`: trains the LightGBM model on `train_source1.tsv` and calibrates the decision threshold via macro-$F_{0.5}$ grid search.
-- `code/run_final_pipeline.py`: runs the trained model against the real test set to produce `matching_results.tsv` and `candidate_pairs.tsv`.
-- `code/offline_eval.py` / `code/compare_strategies.py`: the held-out validation harness used to produce every number reported in Section 5.
-
-Entry point to reproduce results:
+Entry point to reproduce results (run from the repository root):
 ```bash
-python3 code/train_full_model.py --num-train-s1 100000 --model-out output/champion_lgb_model.txt
-python3 code/run_final_pipeline.py \
+python3 code/business_entity_resolution/train_full_model.py --num-train-s1 100000 --model-out output/champion_lgb_model.txt
+python3 code/business_entity_resolution/run_final_pipeline.py \
     --model-path output/champion_lgb_model.txt \
-    --threshold 0.60 \
+    --threshold 0.58 \
     --test-dir dataset/test \
     --output-dir output
 ```
