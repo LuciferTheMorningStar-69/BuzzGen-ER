@@ -11,7 +11,7 @@ import numpy as np
 import lightgbm as lgb
 from rapidfuzz import fuzz
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.dirname(__file__))
 from normalization import get_core_name, get_compact_name, normalize_address, extract_address_digits, LEGAL_TERMS
 from features import compute_pair_features
 
@@ -21,7 +21,7 @@ from offline_eval import (
     prep_record, load_holdout_s1, load_ground_truth, build_country_generator, macro_f05
 )
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "output", "champion_lgb_model_v6.txt")
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "output", "champion_lgb_model_v6.txt")
 
 # --- v5's modified core-name stoplist (removes business-identity-bearing terms) ---
 V5_BAD_TERMS = {'ecole', 'services', 'service', 'centre', 'center', 'club', 'trust',
@@ -114,7 +114,7 @@ def v5_keep(cn1, comp1, norm_a1, dig1, ft1, cn2, comp2, norm_a2, dig2, ft2):
     return True
 
 
-CACHE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", ".eval_cache", "holdout_cands_feats.pkl")
+CACHE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", ".eval_cache", "holdout_cands_feats.pkl")
 
 
 def main():

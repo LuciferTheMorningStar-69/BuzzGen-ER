@@ -18,12 +18,12 @@ from collections import defaultdict
 import numpy as np
 import lightgbm as lgb
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.dirname(__file__))
 from features import FEATURE_NAMES, compute_pair_features
 from offline_eval import prep_record, build_country_generator, macro_f05
 
 DELIM = "\t"
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "dataset")
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "dataset")
 
 
 def load_train_s1(max_rows):
@@ -55,7 +55,7 @@ def load_ground_truth(needed_ids):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--num-train-s1", type=int, default=100_000)
-    ap.add_argument("--model-out", default=os.path.join(os.path.dirname(__file__), "..", "output", "champion_lgb_model_v2.txt"))
+    ap.add_argument("--model-out", default=os.path.join(os.path.dirname(__file__), "..", "..", "..", "output", "champion_lgb_model_v2.txt"))
     args = ap.parse_args()
 
     t_start = time.time()

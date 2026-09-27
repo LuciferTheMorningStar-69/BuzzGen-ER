@@ -14,14 +14,14 @@ import random
 import pickle
 from collections import defaultdict
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.dirname(__file__))
 from normalization import get_core_name, get_compact_name, normalize_address, extract_address_digits
 from blocking import CandidateGenerator
 from features import compute_pair_features
 
 DELIM = "\t"
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "dataset")
-CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", ".eval_cache")
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "dataset")
+CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", ".eval_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 TOTAL_S1_ROWS = 2_206_821  # data rows in train_source1.tsv, excluding header (wc -l - 1)

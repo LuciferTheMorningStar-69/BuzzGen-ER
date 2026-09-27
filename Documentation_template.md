@@ -124,20 +124,20 @@ Our pipeline demonstrates that entity resolution at massive scale (11.7 million 
 ## Appendix
 
 ### A. Code Artifacts & Reproducibility
-The runnable pipeline is at `code/business_entity_resolution/` (mirrored, shared-module-only, at `code/src/`):
-- `src/normalization.py`: Normalization routines, Indic transliteration, regex-compiled state/address parsing.
-- `src/blocking.py`: `CandidateGenerator` inverted index and candidate ranking.
-- `src/features.py`: 22-dimensional pairwise feature extraction.
-- `requirements.txt`: Pinned dependencies (`lightgbm`, `rapidfuzz`, `anyascii`, `scikit-learn`, `numpy`, `pandas`, `scipy`).
+The runnable pipeline is at `code/business_entity_resolution/src/` (mirrored, shared-module-only, at `code/src/`):
+- `normalization.py`: Normalization routines, Indic transliteration, regex-compiled state/address parsing.
+- `blocking.py`: `CandidateGenerator` inverted index and candidate ranking.
+- `features.py`: 22-dimensional pairwise feature extraction.
 - `train_full_model.py`: trains the LightGBM model on `train_source1.tsv` and calibrates the decision threshold via macro-$F_{0.5}$ grid search.
 - `run_final_pipeline.py`: runs the trained model against the real test set to produce `matching_results.tsv` and `candidate_pairs.tsv`.
 - `offline_eval.py` / `compare_strategies.py`: the held-out validation harness used to produce every number reported in Section 5.
 - `validate_submission.py`: validates output files against the platform's submission rules.
+- `requirements.txt` (at `code/business_entity_resolution/`): Pinned dependencies (`lightgbm`, `rapidfuzz`, `anyascii`, `scikit-learn`, `numpy`, `pandas`, `scipy`).
 
 Entry point to reproduce results (run from the repository root):
 ```bash
-python3 code/business_entity_resolution/train_full_model.py --num-train-s1 100000 --model-out output/champion_lgb_model.txt
-python3 code/business_entity_resolution/run_final_pipeline.py \
+python3 code/business_entity_resolution/src/train_full_model.py --num-train-s1 100000 --model-out output/champion_lgb_model.txt
+python3 code/business_entity_resolution/src/run_final_pipeline.py \
     --model-path output/champion_lgb_model.txt \
     --threshold 0.58 \
     --test-dir dataset/test \

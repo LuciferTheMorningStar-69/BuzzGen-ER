@@ -20,7 +20,7 @@ from collections import defaultdict
 import numpy as np
 import lightgbm as lgb
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.dirname(__file__))
 from blocking import CandidateGenerator
 from features import compute_pair_features, FEATURE_NAMES
 
@@ -65,9 +65,9 @@ def build_country_generator(test_dir, country, max_candidates):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--test-dir", default=os.path.join(os.path.dirname(__file__), "..", "..", "dataset", "test"))
-    ap.add_argument("--output-dir", default=os.path.join(os.path.dirname(__file__), "..", "..", "output"))
-    ap.add_argument("--model-path", default=os.path.join(os.path.dirname(__file__), "..", "..", "output", "champion_lgb_model.txt"))
+    ap.add_argument("--test-dir", default=os.path.join(os.path.dirname(__file__), "..", "..", "..", "dataset", "test"))
+    ap.add_argument("--output-dir", default=os.path.join(os.path.dirname(__file__), "..", "..", "..", "output"))
+    ap.add_argument("--model-path", default=os.path.join(os.path.dirname(__file__), "..", "..", "..", "output", "champion_lgb_model.txt"))
     ap.add_argument("--threshold", type=float, default=0.98)
     ap.add_argument("--max-candidates", type=int, default=15)
     ap.add_argument("--name-floor", type=float, default=0.0,

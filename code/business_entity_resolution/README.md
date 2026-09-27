@@ -14,12 +14,12 @@ code/business_entity_resolution/
 ├── src/
 │   ├── normalization.py       # Text cleaning, transliteration, legal & address parsing
 │   ├── blocking.py            # High-speed inverted index candidate generator
-│   └── features.py            # Pairwise feature extraction
-├── train_full_model.py        # Trains the LightGBM model and calibrates the decision threshold
-├── run_final_pipeline.py      # Runs the trained model against the test set to produce submission files
-├── offline_eval.py            # Shared utilities for the held-out validation harness
-├── compare_strategies.py      # Held-out validation harness (produces the numbers in Documentation_template.md)
-├── validate_submission.py     # Validates output files against the platform's submission rules
+│   ├── features.py            # Pairwise feature extraction
+│   ├── train_full_model.py    # Trains the LightGBM model and calibrates the decision threshold
+│   ├── run_final_pipeline.py  # Runs the trained model against the test set to produce submission files
+│   ├── offline_eval.py        # Shared utilities for the held-out validation harness
+│   ├── compare_strategies.py  # Held-out validation harness (produces the numbers in Documentation_template.md)
+│   └── validate_submission.py # Validates output files against the platform's submission rules
 ├── requirements.txt           # Pinned dependencies
 └── README.md                  # This file
 ```
@@ -32,14 +32,14 @@ pip install -r code/business_entity_resolution/requirements.txt
 ## 4. End-to-End Execution
 Train the model (run from the repository root):
 ```bash
-python3 code/business_entity_resolution/train_full_model.py \
+python3 code/business_entity_resolution/src/train_full_model.py \
     --num-train-s1 100000 \
     --model-out output/champion_lgb_model.txt
 ```
 
 Generate the submission files (`matching_results.tsv` and `candidate_pairs.tsv`) for the test set:
 ```bash
-python3 code/business_entity_resolution/run_final_pipeline.py \
+python3 code/business_entity_resolution/src/run_final_pipeline.py \
     --model-path output/champion_lgb_model.txt \
     --threshold 0.58 \
     --test-dir dataset/test \
@@ -49,5 +49,5 @@ python3 code/business_entity_resolution/run_final_pipeline.py \
 ## 5. Validation
 Verify the generated files against the platform's submission rules:
 ```bash
-python3 code/business_entity_resolution/validate_submission.py dataset/test output/matching_results.tsv output/candidate_pairs.tsv
+python3 code/business_entity_resolution/src/validate_submission.py dataset/test output/matching_results.tsv output/candidate_pairs.tsv
 ```
