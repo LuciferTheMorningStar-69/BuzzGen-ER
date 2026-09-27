@@ -6,26 +6,10 @@ High-Precision, Scalable Candidate Generation (Blocking) Module
 import time
 from collections import defaultdict
 from rapidfuzz import fuzz
-import jellyfish
 from normalization import (
     clean_text, get_core_name, get_compact_name, extract_name_tokens,
     normalize_address, extract_address_digits, extract_address_keys
 )
-
-def _metaphone_codes(tokens: list[str]) -> set[str]:
-    """Phonetic codes for a name's tokens. Bridges transliteration drift that
-    exact/fuzzy string matching misses (e.g. anyascii's 'epeks imphotek' for
-    'apex infotech' has raw Jaccard ~0.02 but metaphone+Jaro-Winkler ~0.8)."""
-    codes = set()
-    for t in tokens:
-        try:
-            c = jellyfish.metaphone(t)
-        except Exception:
-            c = ""
-        if c:
-            codes.add(c)
-    return codes
-
 
 class CandidateGenerator:
     """Multi-tier inverted index for ultra-lean candidate generation."""
@@ -37,7 +21,6 @@ class CandidateGenerator:
         self.comp_prefix_idx = defaultdict(list)
         self.addr_idx = defaultdict(list)
         self.digit_idx = defaultdict(list)
-        self.phon_idx = defaultdict(list)
         self.cand_records = []
 
     def fit_candidates(self, candidates: list[tuple[str, str, str, str]]):
@@ -55,8 +38,6 @@ class CandidateGenerator:
 
             for t in extract_name_tokens(cn):
                 self.tok_idx[t].append(idx)
-            for code in _metaphone_codes(extract_name_tokens(cn)):
-                self.phon_idx[code].append(idx)
             if len(comp) >= 4:
                 self.comp_idx[comp].append(idx)
                 if len(comp) >= 6:
@@ -111,22 +92,6 @@ class CandidateGenerator:
                 if len(p) <= 300:
                     cand_indices.update(p)
 
-        # Phonetic (metaphone) key: catches transliteration-drifted names
-        # that share no exact token/n-gram at all (e.g. "epeks imphotek" for
-        # "apex infotech") but sound alike. Rare codes are trusted directly;
-        # common codes go through the same corroboration check as the
-        # rescue pass below, to avoid the "several weak signals outrank one
-        # strong rare one" failure mode from an earlier, less careful attempt.
-        phon_rescue_codes = []
-        for code in _metaphone_codes(tokens):
-            p = self.phon_idx.get(code, [])
-            if not p:
-                continue
-            if len(p) <= 150:
-                cand_indices.update(p)
-            elif len(p) <= 3000:
-                phon_rescue_codes.append(code)
-
         # Rescue pass for common tokens (e.g. "red") that were correctly
         # matched but excluded above to avoid blindly trusting a huge
         # postings list. Cheaply pre-score candidates by ACTUAL shared-token/
@@ -135,9 +100,8 @@ class CandidateGenerator:
         # signal-count-only triage got wrong: it let several weak common
         # signals outrank one strong rare one. Here nothing is admitted
         # without direct, cheap-to-verify textual evidence.
-        if rescue_tokens or phon_rescue_codes:
+        if rescue_tokens:
             t1_set = set(cn.split())
-            s1_codes = _metaphone_codes(tokens) if phon_rescue_codes else set()
             pre_scored = []
             seen = set()
             for t in rescue_tokens:
@@ -149,22 +113,6 @@ class CandidateGenerator:
                     shared_tok = len(t1_set & set(c_rec[4].split()))
                     shared_dig = len(dig & c_rec[6])
                     pre_score = 2 * shared_tok + shared_dig
-                    if pre_score > 0:
-                        pre_scored.append((pre_score, c_idx))
-            for code in phon_rescue_codes:
-                for c_idx in self.phon_idx[code]:
-                    if c_idx in cand_indices or c_idx in seen:
-                        continue
-                    seen.add(c_idx)
-                    c_rec = self.cand_records[c_idx]
-                    # Corroboration for phonetic-only matches: how many OTHER
-                    # metaphone codes also overlap (multiple phonetically
-                    # matching words = much stronger evidence than one), plus
-                    # digit overlap. Literal token overlap doesn't apply here
-                    # by construction (that's why it needed the phonetic path).
-                    shared_phon = len(s1_codes & _metaphone_codes(c_rec[4].split()))
-                    shared_dig = len(dig & c_rec[6])
-                    pre_score = 2 * shared_phon + shared_dig
                     if pre_score > 0:
                         pre_scored.append((pre_score, c_idx))
             pre_scored.sort(reverse=True)
