@@ -11,12 +11,12 @@ FEATURE_NAMES = [
     'first_tok_match', 'exact_name', 'exact_addr', 'len_diff', 'len_ratio',
     'has_a2', 'as_set', 'as_sort', 'as_ratio',
     'inter_dig', 'dig_jaccard', 'dig_mismatch',
-    'max_sim', 'mean_sim', 'min_sim', 'is_s3'
+    'max_sim', 'mean_sim', 'min_sim', 'is_s3', 'first_tok_generic'
 ]
 
 def compute_pair_features(s1_tuple, cand_tuple) -> list[float]:
     """
-    Compute 21 pairwise lexical, structural, and numerical features.
+    Compute 22 pairwise lexical, structural, and numerical features.
     s1_tuple: (sid, name, addr, ctry, cn, comp, dig, norm_a)
     cand_tuple: (cid, name, addr, ctry, cn, comp, dig, norm_a)
     """
@@ -33,6 +33,17 @@ def compute_pair_features(s1_tuple, cand_tuple) -> list[float]:
     t1 = cn1.split()
     t2 = cn2.split()
     first_tok_match = 1.0 if (t1 and t2 and t1[0] == t2[0]) else 0.0
+
+    # A matching first token is weak evidence when that token is just the
+    # place name repeated from the address (e.g. "Bordeaux Amicale" next to
+    # an address containing "Bordeaux") rather than a distinguishing brand
+    # word -- catches false merges between unrelated businesses that happen
+    # to share a city-name prefix.
+    a1_words = norm_a1.split() if norm_a1 else []
+    a2_words = norm_a2.split() if norm_a2 else []
+    t1_is_place = bool(t1 and t1[0] in a1_words)
+    t2_is_place = bool(t2 and t2[0] in a2_words)
+    first_tok_generic = 1.0 if (first_tok_match and (t1_is_place or t2_is_place)) else 0.0
 
     exact_name = 1.0 if (cn1 and cn2 and cn1 == cn2) else 0.0
     exact_addr = 1.0 if (norm_a1 and norm_a2 and norm_a1 == norm_a2) else 0.0
@@ -67,5 +78,5 @@ def compute_pair_features(s1_tuple, cand_tuple) -> list[float]:
         first_tok_match, exact_name, exact_addr, len_diff, len_ratio,
         has_a2, as_set, as_sort, as_ratio,
         inter_dig, dig_jaccard, dig_mismatch,
-        max_sim, mean_sim, min_sim, is_s3
+        max_sim, mean_sim, min_sim, is_s3, first_tok_generic
     ]
