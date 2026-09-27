@@ -5,6 +5,7 @@ Ultra-Fast Normalization & Text Processing Module
 
 import re
 import anyascii
+from rapidfuzz import fuzz
 from rapidfuzz.distance import Levenshtein
 
 LEGAL_TERMS = {
@@ -89,15 +90,22 @@ _SINGLE_WORD_LEGAL_TERMS = [t for t in LEGAL_TERMS if " " not in t and len(t) >=
 
 
 def _is_legal_term(word: str) -> bool:
-    """Exact match, or a near-miss (edit distance 1-2) to tolerate transliteration
-    noise like anyascii's 'praivet' for 'private' or 'limitet' for 'limited'."""
+    """Exact match, or a near-miss to tolerate transliteration noise like
+    anyascii's 'praivet' for 'private' (edit distance 3, mostly transposed
+    letters -- plain Levenshtein alone misses this). Uses fuzz.ratio (edit
+    distance normalized by length, robust to transpositions) combined with
+    an edit-distance fallback, matched against similar-length terms only to
+    avoid false positives like 'limited' vs 'limitless'."""
     if word in LEGAL_TERMS:
         return True
     if len(word) < 4:
         return False
-    max_dist = 1 if len(word) <= 6 else 2
     for term in _SINGLE_WORD_LEGAL_TERMS:
-        if abs(len(word) - len(term)) <= max_dist and Levenshtein.distance(word, term) <= max_dist:
+        if abs(len(word) - len(term)) > 2:
+            continue
+        if fuzz.ratio(word, term) >= 70.0:
+            return True
+        if Levenshtein.distance(word, term) <= 2:
             return True
     return False
 
