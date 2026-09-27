@@ -24,7 +24,11 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "dataset")
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", ".eval_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-HOLDOUT_SKIP_ROWS = 100_000  # never touched by any existing train script
+TOTAL_S1_ROWS = 2_206_821  # data rows in train_source1.tsv, excluding header (wc -l - 1)
+HOLDOUT_TAIL_ROWS = 200_000  # fixed reserved tail -- stays valid regardless of training size,
+                             # so training can scale up (currently up to HOLDOUT_START rows)
+                             # without ever invalidating this holdout split
+HOLDOUT_START = TOTAL_S1_ROWS - HOLDOUT_TAIL_ROWS  # = 2,006,821
 HOLDOUT_SAMPLE_SIZE = 20_000
 SEED = 1234
 
@@ -44,14 +48,14 @@ def load_holdout_s1():
     with open(path, encoding="utf-8") as f:
         f.readline()
         for i, line in enumerate(f):
-            if i < HOLDOUT_SKIP_ROWS:
+            if i < HOLDOUT_START:
                 continue
             p = line.rstrip("\n").split(DELIM)
             if p and p[0]:
                 rows.append((p[0], p[1] if len(p) > 1 else "", p[2] if len(p) > 2 else "", p[3] if len(p) > 3 else ""))
     random.Random(SEED).shuffle(rows)
     sample = rows[:HOLDOUT_SAMPLE_SIZE]
-    print(f"Holdout pool available: {len(rows):,} rows (beyond row {HOLDOUT_SKIP_ROWS:,}); sampled {len(sample):,}")
+    print(f"Holdout pool available: {len(rows):,} rows (fixed reserved tail, row {HOLDOUT_START:,}+); sampled {len(sample):,}")
     ctry_counts = defaultdict(int)
     for r in sample:
         ctry_counts[r[3]] += 1
