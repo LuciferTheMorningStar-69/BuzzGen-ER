@@ -5,7 +5,6 @@ Ultra-Fast Normalization & Text Processing Module
 
 import re
 import anyascii
-import wordninja
 from rapidfuzz.distance import Levenshtein
 
 LEGAL_TERMS = {
@@ -103,46 +102,10 @@ def _is_legal_term(word: str) -> bool:
     return False
 
 
-def _segment_domain_slug(slug: str) -> str:
-    """Word-segments a concatenated domain slug (e.g. 'utkarshexim' ->
-    'utkarsh exim'). S2/S3 frequently substitute a business name with its
-    website; after stripping the TLD this collapses to one unbroken word
-    that shares no tokens with the S1 side's naturally-spaced name.
-    wordninja's English frequency dictionary over-fragments unfamiliar
-    Indic-transliterated compounds and invented brand names into
-    meaningless 2-3 letter scraps (e.g. 'swarnabhoomi' -> 's war nab hoo
-    mi'), so a bad segmentation is rejected via average resulting word
-    length rather than trusted blindly."""
-    if len(slug) < 5:
-        return ""
-    try:
-        words = wordninja.split(slug)
-    except Exception:
-        return ""
-    if not words or any(len(w) == 1 for w in words) or (len(slug) / len(words)) < 3.5:
-        return ""
-    return " ".join(words)
-
-
-_PROTOCOL_WWW_REGEX = re.compile(r"^(?:https?:\/\/)?(?:www\.)?")
-
-
 def get_core_name(text: str) -> str:
     cleaned = clean_text(text)
     tokens = [w for w in cleaned.split() if not _is_legal_term(w)]
-    core = " ".join(tokens) if tokens else cleaned
-
-    # get_compact_name() strips spaces back out, so replacing the core with
-    # its segmented form is invariant for compact-index matching -- only
-    # token-level matching (blocking's tok_idx, first_tok_match, fuzzy
-    # ratios) benefits, and only when the raw text was actually a domain.
-    if text and isinstance(text, str) and core and len(core.split()) == 1:
-        lowered = _PROTOCOL_WWW_REGEX.sub("", text.strip().lower())
-        if DOMAIN_SUFFIX_REGEX.search(lowered):
-            seg = _segment_domain_slug(core)
-            if seg:
-                core = seg
-    return core
+    return " ".join(tokens) if tokens else cleaned
 
 
 def get_compact_name(cn: str) -> str:
